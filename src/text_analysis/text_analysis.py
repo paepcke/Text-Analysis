@@ -48,29 +48,51 @@ stopWordLanguage = 'english'
 
 form = sg.FlexForm('Text Analysis Parameters')  # begin with a blank form
 
-layout = [
-          [sg.Text('How would you like to parse your text?')],
-          [sg.Text('Full Path of Input File (Use \\\ as Separators)', size=(42, 1)), sg.InputText('C:\\\Your Folder\\\Your File.csv')],
-          [sg.Text('Comma-Separated List of Fields to Analyze (No Spaces)', size=(42, 1)), sg.InputText('Field1,Field2')],
-          [sg.Text('N-Gram Size (Number of Words)', size=(42, 1)), sg.InputText('6')],
-          [sg.Text('Number of Sections', size=(42, 1)), sg.InputText('10')],
-          [sg.Text('Langugage to Use for Stop Words', size=(42, 1)), sg.Combo(values=stopWordLanguageList,default_value='english')],
-          [sg.Submit(), sg.Cancel()]
-         ]
+INPUT_FILE_POS = 0
+FIELDS_POS = 1
+ID_FIELD_NAME_POS = 2
+NGRAM_SIZE_POS = 3
+NUM_SECTIONS_POS = 4
+LANGUAGE_POS = 5
+#*******************
+# layout = [
+#           [sg.Text('How would you like to parse your text?')],
+#           [sg.Text('Full Path of Input File (Use \\\ as Separators)', size=(42, 1)), sg.InputText('C:\\\Your Folder\\\Your File.csv')],
+#           [sg.Text('Comma-Separated List of Fields to Analyze (No Spaces)', size=(42, 1)), sg.InputText('Field1,Field2')],
+#           [sg.Text('Name of unique identifier field', size=(42, 1)), sg.InputText('Record ID')],
+#           [sg.Text('N-Gram Size (Number of Words)', size=(42, 1)), sg.InputText('6')],
+#           [sg.Text('Number of Sections', size=(42, 1)), sg.InputText('10')],
+#           [sg.Text('Langugage to Use for Stop Words', size=(42, 1)), sg.Combo(values=stopWordLanguageList,default_value='english')],
+#           [sg.Submit(), sg.Cancel()]
+#          ]
+# 
+# button, values = form.Layout(layout).Read()
+# 
+# # Continue if the user did not cancel, did not close the dialog, and entered the right type of value
+# if button == "Cancel" or \
+#     button is None or \
+#     not(values[NGRAM_SIZE_POS].isdigit()) or \
+#     not(values[NUM_SECTIONS_POS].isdigit()):
+#     sys.exit("You either canceled/closed the dialog or entered an invalid parameter. Exiting the program.") 
+# 
+# # Read the input
+# inputFile = values[INPUT_FILE_POS]
+# wordFilePath = os.path.dirname(inputFile)
+# textFields = values[FIELDS_POS].split(',')
+# recordId = values[ID_FIELD_NAME_POS]
+# stopWordLanguage = values[LANGUAGE_POS]
+# numberOfWords = int(values[NGRAM_SIZE_POS])
+# numberOfSections = int(values[NUM_SECTIONS_POS])
 
-button, values = form.Layout(layout).Read()
+inputFile = '/tmp/propub_msgs.csv'
+wordFilePath = os.path.dirname(inputFile)
+textFields = ['message']
+recordIdCol = 'id'
+stopWordLanguage = 'english' 
+numberOfWords = 6
+numberOfSections = 10
 
-# Continue if the user did not cancel, did not close the dialog, and entered the right type of value
-if button == "Cancel" or button is None or not(values[2].isdigit()) or not(values[3].isdigit()):
-    sys.exit("You either canceled/closed the dialog or entered an invalid parameter. Exiting the program.") 
-
-# Read the input
-inputFile = values[0]
-wordFilePath = os.path.dirname(inputFile) + "\\"
-textFields = values[1].split(',')
-stopWordLanguage = values[4]
-numberOfWords = int(values[2])
-numberOfSections = int(values[3])
+#*******************
 
 # Valid stop word language?
 if not(stopWordLanguage in stopWordLanguageList):
@@ -81,11 +103,11 @@ if not(os.path.exists(inputFile)):
     sys.exit("Input file does not exits. Exiting the program.")
 
 # Delete any previously written files.
-outFile = wordFilePath + "Words.csv"
+outFile = os.path.join(wordFilePath, "words.csv")
 if os.path.exists(outFile):
     os.remove(outFile) 
 
-outFile = wordFilePath + "NGrams.csv"
+outFile = os.path.join(wordFilePath, "ngrams.csv")
 if os.path.exists(outFile):
     os.remove(outFile) 
 
@@ -102,7 +124,7 @@ with open(inputFile, mode='r') as csvFile:
     csvReader = csv.DictReader(csvFile)
     lineCount = 0
     for csvRow in csvReader:
-        recordID = csvRow["Record ID"]
+        recordID = csvRow[recordIdCol]
 
         # Process each text field.
         for textItem in textFields:
@@ -125,14 +147,14 @@ with open(inputFile, mode='r') as csvFile:
             nltkSentiment = SentimentIntensityAnalyzer()
 
             # Write single words to csv
-            outFile = wordFilePath + "Words.csv"
+            outFile = os.path.join(wordFilePath, "words.csv")
 
             with open(outFile,'a', newline='') as out:
                 csvOut = csv.writer(out)
 
                 # Write the heading
                 if recordCounter == 1:
-                    heading = ('Field','Record ID','Word','Stem','Stop Word','Sentiment','Word Number','Section','Section Word Number')
+                    heading = (f"{recordID},word,stem,stop_word,sentiment,word_number,section,section_Word_Number").split(',')
                     csvOut.writerow(heading)
 
                 wordNumber = 1
@@ -172,14 +194,14 @@ with open(inputFile, mode='r') as csvFile:
             output = list(ngrams(tokens, numberOfWords))
 
             # Write n-grams to csv
-            outFile = wordFilePath + "NGrams.csv"
+            outFile = os.path.join(wordFilePath,"NGrams.csv")
 
             with open(outFile,'a', newline='') as out:
                 csvOut = csv.writer(out)
 
                 # Write the heading
                 if recordCounter == 1:
-                    heading = ('Field','Record ID','Word1',)
+                    heading = ('Field',recordID,'Word1',)
                     for i in range(2, numberOfWords+1):
                         heading = heading + ('Word' + str(i),)
                     
