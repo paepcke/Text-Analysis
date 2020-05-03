@@ -1,3 +1,5 @@
+#!/usr/bin/env python
+
 #  This code will read an input csv file and break specified text fields into words and n-grams.
 #  Basic sentiment scores will also be assigned to each word and n-gram.
 #  Stop words will also be identified in the word breakout.
@@ -25,8 +27,13 @@ from nltk.translate.gdfa import grow_diag_final_and
 from nltk.util import ngrams
 from pip._vendor.requests.api import head
 
+from logging_service import LoggingService
 
 class TextAnalyzer(object):
+    
+    # How many records to process before
+    # a progress report:
+    PROGRESS_EVERY = 1000
 
     stopWordLanguageList = ['arabic','azerbaijani','danish','dutch',
                             'english','finnish','french','german','greek',
@@ -50,8 +57,10 @@ class TextAnalyzer(object):
                  record_id_col='id',
                  stopword_language='english',
                  ngram_len=3,
+                 separator=','
                  ):
-        
+
+        self.log = LoggingService()
         if outfiles_dir is not None:
             if not os.path.exists(outfiles_dir):
                 os.mkdir(outfiles_dir)
@@ -65,6 +74,7 @@ class TextAnalyzer(object):
         self.record_id_col = record_id_col
         self.stopword_language = stopword_language
         self.ngram_len = ngram_len
+        self.separator = separator
 
         self.create_wordnet_nltk_pos_xlation()
         # Generate outfile names for word stats,
@@ -80,6 +90,9 @@ class TextAnalyzer(object):
             wordstats_path = os.path.join(outfiles_dir,
                                           f"{os.path.basename(text_file)}{self.word_file_suffix}.csv")
 
+        self.log.info(f"Infile: {text_file}")
+        self.log.info(f"Word stats will be in {wordstats_path}")
+        self.log.info(f"NGrams will be in {ngrams_path}")
         self.generate_outfiles(text_file,
                                wordstats_path,
                                ngrams_path)
@@ -93,6 +106,8 @@ class TextAnalyzer(object):
                           word_stats_path,
                           ngrams_path):
         '''
+        Generates both word stats and ngrams outfile.
+        
         Assumptions about inst var initializations:
             o text_fields,
             o record_id_col,
@@ -102,8 +117,10 @@ class TextAnalyzer(object):
              
         @param text_file:
         @type text_file:
-        @param outfiles_dir:
-        @type outfiles_dir:
+        @param word_stats_path output path for word stats
+        @type word_stats_path: str
+        @param ngrams_path: output path for ngrams
+        @type ngrams_path: str
         '''
 
         try:
@@ -134,7 +151,7 @@ class TextAnalyzer(object):
             heading = [self.record_id_col]
             heading.extend(self.word_col_names)
 
-                
+            self.log.info("Creating NLTK tool instances...")
             heading.extend(['full_ngram', 'ngram_sentiment', 'ngram_number'])
             ngrams_writer     = csv.DictWriter(ngram_fd, heading)
             ngrams_writer.writeheader()
@@ -150,6 +167,7 @@ class TextAnalyzer(object):
             # Create the sentiment analyzer for some basic sentiment tests.
             sentiment_analyzer = SentimentIntensityAnalyzer()
 
+            self.log.info("Done creating NLTK tool instances.")
             # List of all_stopwords:
             self.all_stopwords = set(stopwords.words(self.stopword_language)) 
             
@@ -158,13 +176,20 @@ class TextAnalyzer(object):
             # such as "can't":
             spec_char_pat = re.compile(r"[\w']+")
 
+            # How many records since last progress
+            # report:
+            records_since_prog_rep = 0
+            
             record_num = 0
             with open(text_file, 'r') as in_fd:
-                csv_reader = csv.DictReader(in_fd)
+                csv_reader = csv.DictReader(in_fd, delimiter=self.separator)
                 for row_dict in csv_reader:
                     record_num += 1
+                    records_since_prog_rep += 1
                     for txt_field in self.text_fields:
                         text = row_dict[txt_field]
+                        if text is None:
+                            continue
                         # Tokenize:
                         token_arr = tokenizer.tokenize(text)
                         # Remove punctuation:
@@ -183,7 +208,10 @@ class TextAnalyzer(object):
                                               clean_token_arr, 
                                               word_stats_writer, 
                                               sentiment_analyzer)
-
+                    # Time for progress report?
+                    if records_since_prog_rep > self.PROGRESS_EVERY:
+                        self.log.info(f"Processed {record_num} input file records.")
+                        records_since_prog_rep = 0
         finally:
             word_stats_fd.close()
             ngram_fd.close()
@@ -199,6 +227,24 @@ class TextAnalyzer(object):
                          clean_token_arr, 
                          word_stats_writer, 
                          sentiment_analyzer):
+        '''
+        Compute and write to file all word stats
+        of one record.
+        
+        @param record_num: record count of this record
+        @type record_num: int
+        @param row_dict: dict returned from csv reader; one key
+            per column
+        @type row_dict: {str : str}
+        @param text: text to analyze; one field of one in file record
+        @type text: str
+        @param clean_token_arr: tokenized array of the text
+        @type clean_token_arr: [str]
+        @param word_stats_writer: csv dict writer for output
+        @type word_stats_writer: csv.DictWriter
+        @param sentiment_analyzer: sentiment analysis NLTK instance
+        @type sentiment_analyzer: SentimentIntensityAnalyzer
+        '''
                 
         # First, get sentiment neg/neu/pos/compount for
         # the text:
@@ -253,165 +299,20 @@ class TextAnalyzer(object):
         
     
     #------------------------------------
-    # tokenize
-    #-------------------
-
-    def tokenize(self, text_file):
-        pass
-
-    #------------------------------------
     # create_wordnet_nltk_pos_xlation
     #-------------------
     
     def create_wordnet_nltk_pos_xlation(self):
+        '''
+        Wordnet has different part of speech tags
+        than NLTK. Build a dict from one to the other.
+        When in doubt, make pos be a noun.
+        '''
         self.pos_tag_map = defaultdict(lambda : 'n')
         self.pos_tag_map['J'] = 'a'
         self.pos_tag_map['V'] = 'v'
         self.pos_tag_map['R'] = 'r'
 
-    #*******************
-
-#     # Valid stop word language?
-#     if not(stopword_language in stopWordLanguageList):
-#          sys.exit("Invalid stop word language. Exiting program.")   
-#     
-#     # Check to make sure the input file exists:
-#     if not(os.path.exists(text_file)):
-#         sys.exit("Input file does not exits. Exiting the program.")
-#     
-#     # Delete any previously written files.
-#     outFile = os.path.join(outfiles_dir, "words.csv")
-#     if os.path.exists(outFile):
-#         os.remove(outFile) 
-#     
-#     outFile = os.path.join(outfiles_dir, "ngrams.csv")
-#     if os.path.exists(outFile):
-#         os.remove(outFile) 
-#     
-#     # Get list of stop words (will be used later)
-#     stopwords = set(stopwords.words(stopword_language)) 
-#     
-#     stemmer = SnowballStemmer(stopword_language) 
-#     
-#     recordCounter = 0
-#     spec_char_rep_pat = r'[^a-zA-Z0-9\s]|\n'
-#     # Open the input csv file. Loop through each record and process each field (text_fields)
-#     csv.field_size_limit(sys.maxsize)
-#     with open(text_file, mode='r') as csvFile:
-#         
-#         # Create the sentiment analyzer for some basic sentiment tests.
-#         nltkSentiment = SentimentIntensityAnalyzer()
-#         
-#         csvReader = csv.DictReader(csvFile)
-#         lineCount = 0
-#         for csvRow in csvReader:
-#             recordID = csvRow[record_id_col]
-#     
-#             # Process each text field.
-#             for textItem in text_fields:
-#                 # One column/field of text; a word or sentence, or more:
-#                 text = csvRow[textItem]
-#     
-#                 recordCounter += 1
-#                 
-#                 # Text cleanup
-#                 text = " " + text.lower() 
-#                 text = re.sub(spec_char_rep_pat, ' ', text) # Replace all none alphanumeric characters with spaces
-#     
-#                 # Break into single words
-#                 tokens = [token for token in text.split(" ") if token != ""]
-#                 output = list(ngrams(tokens, 1))
-#     
-#                 sectionWordCount = math.ceil(len(output)/numberOfSections)
-#     
-#                 # Write single words to csv
-#                 outFile = os.path.join(outfiles_dir, "words.csv")
-#     
-#                 with open(outFile,'a', newline='') as out:
-#                     csvOut = csv.writer(out)
-#     
-#                     # Write the heading
-#                     if recordCounter == 1:
-#                         heading = (f"{recordID},word,stem,stop_word,sentiment,word_number,section,section_Word_Number").split(',')
-#                         csvOut.writerow(heading)
-#     
-#                     wordNumber = 1
-#                     wordNumberInSection = 1
-#                     section = 1
-#     
-#                     # Write each word
-#                     for row in output:
-#                         word = ''.join(row) #  Convert the tuple to a string
-#     
-#                         # Get the word's stem.
-#                         wordStem = stemmer.stem(word)
-#     
-#                         # Get the word's sentiment score.
-#                         score = nltkSentiment.polarity_scores(word)
-#                         compoundScore = score['compound']
-#     
-#                         if word in stopwords:
-#                             isStopWord = True
-#                         else:
-#                             isStopWord = False
-#     
-#                         row = (str(textItem),) + (str(recordID),) + row + (wordStem,) + (str(isStopWord),) + (str(compoundScore),) + (str(wordNumber),) + (str(section),) + (str(wordNumberInSection),)
-#                         csvOut.writerow(row)
-#     
-#                         # Update counter and section.
-#                         if wordNumberInSection % sectionWordCount == 0:
-#                             section = section + 1
-#                             wordNumberInSection = 1
-#                         else:
-#                             wordNumberInSection = wordNumberInSection + 1
-#     
-#                         wordNumber = wordNumber + 1
-#     
-#                 # Parse into n-grams
-#                 tokens = [token for token in text.split(" ") if token != ""]
-#                 output = list(ngrams(tokens, ngram_len))
-#     
-#                 # Write n-grams to csv
-#                 outFile = os.path.join(outfiles_dir,"NGrams.csv")
-#     
-#                 with open(outFile,'a', newline='') as out:
-#                     csvOut = csv.writer(out)
-#     
-#                     # Write the heading
-#                     if recordCounter == 1:
-#                         heading = (recordID,'Word1',)
-#                         for i in range(2, ngram_len+1):
-#                             heading = heading + ('Word' + str(i),)
-#                         
-#                         heading = heading + ('Full N-Gram','N-Gram Sentiment','N-Gram Number','Section','Section N-Gram Number')
-#                         csvOut.writerow(heading)
-#     
-#                     wordNumber = 1
-#                     wordNumberInSection = 1
-#                     section = 1
-#     
-#                     # Write each n-gram
-#                     fullLine = ''
-#                     for row in output:
-#                         fullLine = ' '.join(row) # Build the full string with spaces
-#                         
-#                         # Get the n-gram's sentiment score.
-#                         score = nltkSentiment.polarity_scores(fullLine)
-#                         compoundScore = score['compound']
-#     
-#                         row = (str(textItem),) + (str(recordID),) + row + (fullLine,) + (str(compoundScore),) + (str(wordNumber),) + (str(section),) + (str(wordNumberInSection),)
-#                         csvOut.writerow(row)
-#     
-#                         # Update counter and section.
-#                         if wordNumberInSection % sectionWordCount == 0:
-#                             section = section + 1
-#                             wordNumberInSection = 1
-#                         else:
-#                             wordNumberInSection = wordNumberInSection + 1
-#     
-#                         wordNumber = wordNumber + 1
-#     
-#             lineCount += 1
             
 # ----------------------------- Main ----------------
 
@@ -435,6 +336,9 @@ if __name__ == '__main__':
     parser.add_argument('-l', '--language',
                         help="language of text; default: 'english'",
                         default='english')
+    parser.add_argument('-s', '--separator',
+                        help="field separator char in input file; default is comma.",
+                        default=',')
     parser.add_argument('input_file',
                         help='CSV input file')
     parser.add_argument('columns',
@@ -459,6 +363,7 @@ if __name__ == '__main__':
                  outfiles_dir=args.outdir,
                  record_id_col=args.idcol,
                  stopword_language=args.language,
-                 ngram_len=args.ngramlen
+                 ngram_len=args.ngramlen,
+                 separator=args.separator
                  )
 
