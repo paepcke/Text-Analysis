@@ -209,7 +209,7 @@ class TextAnalyzer(object):
                                               word_stats_writer, 
                                               sentiment_analyzer)
                     # Time for progress report?
-                    if records_since_prog_rep > self.PROGRESS_EVERY:
+                    if records_since_prog_rep >= self.PROGRESS_EVERY:
                         self.log.info(f"Processed {record_num} input file records.")
                         records_since_prog_rep = 0
         finally:
@@ -261,11 +261,12 @@ class TextAnalyzer(object):
                      for (word,pos) in pos_tuples]
         pos_arr   = [pos for (word,pos) in pos_tuples]
         stopword_status_arr = [word in self.all_stopwords for word in clean_token_arr]
-        
+
+        rec_id = row_dict[self.record_id_col]
         # Finally, put the rows together, a row for each value:
         out_row = {}
         for (i, token) in enumerate(clean_token_arr):
-            out_row[self.record_id_col] = row_dict[self.record_id_col]
+            out_row[self.record_id_col] = rec_id
             out_row['word'] = token
             out_row['stem'] = stem_arr[i]
             out_row['lemmatized'] = lem_arr[i]
@@ -277,7 +278,7 @@ class TextAnalyzer(object):
             out_row['stop_word'] = stopword_status_arr[i]
             out_row['word_number'] = record_num
             
-        word_stats_writer.writerow(out_row)
+            word_stats_writer.writerow(out_row)
 
     #------------------------------------
     # write_ngrams
