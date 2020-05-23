@@ -25,7 +25,6 @@ from nltk.stem.wordnet import WordNetLemmatizer
 from nltk.tokenize import TweetTokenizer
 from nltk.translate.gdfa import grow_diag_final_and
 from nltk.util import ngrams
-from pip._vendor.requests.api import head
 
 from logging_service import LoggingService
 
